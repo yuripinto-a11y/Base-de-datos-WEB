@@ -1,1 +1,146 @@
+from flask import Flask, request, redirect, url_for, render_template_string
+import sqlite3
+import os
+
+app = Flask(__name__)
+DB_NAME = "datos.db"
+
+def init_db():
+    if not os.path.exists(DB_NAME):
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE personas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre TEXT NOT NULL,
+                correo TEXT NOT NULL
+            );
+        """)
+        conn.commit()
+        conn.close()
+
+def get_conn():
+    return sqlite3.connect(DB_NAME)
+
+# -------------------------
+# LISTAR
+# -------------------------
+@app.route("/")
+def index():
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, nombre, correo FROM personas")
+    personas = cursor.fetchall()
+    conn.close()
+
+    html = """
+    <h1>Listado de Personas</h1>
+    <a href='/nuevo'>➕ Nueva persona</a><br><br>
+
+    <table border='1' cellpadding='6'>
+        <tr>
+            <th>ID</th><th>Nombre</th><th>Correo</th><th>Acciones</th>
+        </tr>
+        {% for p in personas %}
+        <tr>
+            <td>{{ p[0] }}</td>
+            <td>{{ p[1] }}</td>
+            <td>{{ p[2] }}</td>
+            <td>
+                <a href='/editar/{{ p[0] }}'>✏️ Editar</a>
+                |
+                <form action='/eliminar/{{ p[0] }}' method='POST' style='display:inline;'>
+                    <button type='submit'>🗑️ Eliminar</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    """
+
+    return render_template_string(html, personas=personas)
+
+# -------------------------
+# CREAR
+# -------------------------
+@app.route("/nuevo", methods=["GET", "POST"])
+def nuevo():
+    if request.method == "POST":
+        nombre = request.form["nombre"]
+        correo = request.form["correo"]
+
+        conn = get_conn()
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO personas (nombre, correo) VALUES (?, ?)", (nombre, correo))
+        conn.commit()
+        conn.close()
+
+        return redirect(url_for("index"))
+
+    html = """
+    <h1>Nueva Persona</h1>
+    <form method='POST'>
+        Nombre:<br>
+        <input type='text' name='nombre' required><br>
+        Correo:<br>
+        <input type='email' name='correo' required><br><br>
+        <button type='submit'>Guardar</button>
+        <a href='/'>Cancelar</a>
+    </form>
+    """
+
+    return render_template_string(html)
+
+# -------------------------
+# EDITAR
+# -------------------------
+@app.route("/editar/<int:persona_id>", methods=["GET", "POST"])
+def editar(persona_id):
+    conn = get_conn()
+    cursor = conn.cursor()
+
+    if request.method == "POST":
+        nombre = request.form["nombre"]
+        correo = request.form["correo"]
+        cursor.execute("UPDATE personas SET nombre=?, correo=? WHERE id=?", (nombre, correo, persona_id))
+        conn.commit()
+        conn.close()
+        return redirect(url_for("index"))
+
+    cursor.execute("SELECT id, nombre, correo FROM personas WHERE id=?", (persona_id,))
+    persona = cursor.fetchone()
+    conn.close()
+
+    html = """
+    <h1>Editar Persona</h1>
+    <form method='POST'>
+        Nombre:<br>
+        <input type='text' name='nombre' value='{{ persona[1] }}' required><br>
+        Correo:<br>
+        <input type='email' name='correo' value='{{ persona[2] }}' required><br><br>
+        <button type='submit'>Actualizar</button>
+        <a href='/'>Cancelar</a>
+    </form>
+    """
+
+    return render_template_string(html, persona=persona)
+
+# -------------------------
+# ELIMINAR
+# -------------------------
+@app.route("/eliminar/<int:persona_id>", methods=["POST"])
+def eliminar(persona_id):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM personas WHERE id=?", (persona_id,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for("index"))
+
+# -------------------------
+# Ejecutar servidor
+# -------------------------
+if __name__ == "__main__":
+    init_db()
+    app.run(host="0.0.0.0", port=8000)
 
