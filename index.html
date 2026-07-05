@@ -1,146 +1,122 @@
-from flask import Flask, request, redirect, url_for, render_template_string
-import sqlite3
-import os
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Personas – CRUD</title>
+    <style>
+        body { font-family: Arial; margin: 20px; }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+        th, td { border: 1px solid #ccc; padding: 8px; }
+        th { background-color: #eee; }
+        input, button { padding: 6px; margin: 5px 0; }
+        #formulario { margin-top: 20px; }
+    </style>
+</head>
+<body>
 
-app = Flask(__name__)
-DB_NAME = "datos.db"
+    <h1>Gestión de Personas</h1>
 
-def init_db():
-    if not os.path.exists(DB_NAME):
-        conn = sqlite3.connect(DB_NAME)
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE personas (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                nombre TEXT NOT NULL,
-                correo TEXT NOT NULL
-            );
-        """)
-        conn.commit()
-        conn.close()
+    <h2>Agregar Persona</h2>
+    <div id="formulario">
+        <input type="text" id="nombre" placeholder="Nombre" required><br>
+        <input type="email" id="correo" placeholder="Correo" required><br>
+        <button onclick="agregarPersona()">Guardar</button>
+    </div>
 
-def get_conn():
-    return sqlite3.connect(DB_NAME)
-
-# -------------------------
-# LISTAR
-# -------------------------
-@app.route("/")
-def index():
-    conn = get_conn()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, nombre, correo FROM personas")
-    personas = cursor.fetchall()
-    conn.close()
-
-    html = """
-    <h1>Listado de Personas</h1>
-    <a href='/nuevo'>➕ Nueva persona</a><br><br>
-
-    <table border='1' cellpadding='6'>
+    <h2>Listado</h2>
+    <table id="tabla">
         <tr>
-            <th>ID</th><th>Nombre</th><th>Correo</th><th>Acciones</th>
+            <th>ID</th>
+            <th>Nombre</th>
+            <th>Correo</th>
+            <th>Acciones</th>
         </tr>
-        {% for p in personas %}
-        <tr>
-            <td>{{ p[0] }}</td>
-            <td>{{ p[1] }}</td>
-            <td>{{ p[2] }}</td>
-            <td>
-                <a href='/editar/{{ p[0] }}'>✏️ Editar</a>
-                |
-                <form action='/eliminar/{{ p[0] }}' method='POST' style='display:inline;'>
-                    <button type='submit'>🗑️ Eliminar</button>
-                </form>
-            </td>
-        </tr>
-        {% endfor %}
     </table>
-    """
 
-    return render_template_string(html, personas=personas)
+<script>
+const API = "http://192.168.1.31:8000";  // ← CAMBIA ESTA IP A LA DE TU SERVIDOR FLASK
 
-# -------------------------
-# CREAR
-# -------------------------
-@app.route("/nuevo", methods=["GET", "POST"])
-def nuevo():
-    if request.method == "POST":
-        nombre = request.form["nombre"]
-        correo = request.form["correo"]
+// -------------------------
+// Cargar listado
+// -------------------------
+function cargarPersonas() {
+    fetch(API + "/personas")
+        .then(res => res.json())
+        .then(data => {
+            const tabla = document.getElementById("tabla");
+            tabla.innerHTML = `
+                <tr>
+                    <th>ID</th>
+                    <th>Nombre</th>
+                    <th>Correo</th>
+                    <th>Acciones</th>
+                </tr>
+            `;
 
-        conn = get_conn()
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO personas (nombre, correo) VALUES (?, ?)", (nombre, correo))
-        conn.commit()
-        conn.close()
+            data.forEach(p => {
+                tabla.innerHTML += `
+                    <tr>
+                        <td>${p[0]}</td>
+                        <td>${p[1]}</td>
+                        <td>${p[2]}</td>
+                        <td>
+                            <button onclick="editarPersona(${p[0]}, '${p[1]}', '${p[2]}')">Editar</button>
+                            <button onclick="eliminarPersona(${p[0]})">Eliminar</button>
+                        </td>
+                    </tr>
+                `;
+            });
+        });
+}
 
-        return redirect(url_for("index"))
+// -------------------------
+// Agregar persona
+// -------------------------
+function agregarPersona() {
+    const nombre = document.getElementById("nombre").value;
+    const correo = document.getElementById("correo").value;
 
-    html = """
-    <h1>Nueva Persona</h1>
-    <form method='POST'>
-        Nombre:<br>
-        <input type='text' name='nombre' required><br>
-        Correo:<br>
-        <input type='email' name='correo' required><br><br>
-        <button type='submit'>Guardar</button>
-        <a href='/'>Cancelar</a>
-    </form>
-    """
+    fetch(API + "/personas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre, correo })
+    })
+    .then(() => cargarPersonas());
+}
 
-    return render_template_string(html)
+// -------------------------
+// Editar persona
+// -------------------------
+function editarPersona(id, nombreActual, correoActual) {
+    const nuevoNombre = prompt("Nuevo nombre:", nombreActual);
+    const nuevoCorreo = prompt("Nuevo correo:", correoActual);
 
-# -------------------------
-# EDITAR
-# -------------------------
-@app.route("/editar/<int:persona_id>", methods=["GET", "POST"])
-def editar(persona_id):
-    conn = get_conn()
-    cursor = conn.cursor()
+    if (!nuevoNombre || !nuevoCorreo) return;
 
-    if request.method == "POST":
-        nombre = request.form["nombre"]
-        correo = request.form["correo"]
-        cursor.execute("UPDATE personas SET nombre=?, correo=? WHERE id=?", (nombre, correo, persona_id))
-        conn.commit()
-        conn.close()
-        return redirect(url_for("index"))
+    fetch(API + "/editar/" + id, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `nombre=${nuevoNombre}&correo=${nuevoCorreo}`
+    })
+    .then(() => cargarPersonas());
+}
 
-    cursor.execute("SELECT id, nombre, correo FROM personas WHERE id=?", (persona_id,))
-    persona = cursor.fetchone()
-    conn.close()
+// -------------------------
+// Eliminar persona
+// -------------------------
+function eliminarPersona(id) {
+    if (!confirm("¿Eliminar esta persona?")) return;
 
-    html = """
-    <h1>Editar Persona</h1>
-    <form method='POST'>
-        Nombre:<br>
-        <input type='text' name='nombre' value='{{ persona[1] }}' required><br>
-        Correo:<br>
-        <input type='email' name='correo' value='{{ persona[2] }}' required><br><br>
-        <button type='submit'>Actualizar</button>
-        <a href='/'>Cancelar</a>
-    </form>
-    """
+    fetch(API + "/eliminar/" + id, { method: "POST" })
+        .then(() => cargarPersonas());
+}
 
-    return render_template_string(html, persona=persona)
+// -------------------------
+// Inicializar
+// -------------------------
+cargarPersonas();
+</script>
 
-# -------------------------
-# ELIMINAR
-# -------------------------
-@app.route("/eliminar/<int:persona_id>", methods=["POST"])
-def eliminar(persona_id):
-    conn = get_conn()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM personas WHERE id=?", (persona_id,))
-    conn.commit()
-    conn.close()
-    return redirect(url_for("index"))
-
-# -------------------------
-# Ejecutar servidor
-# -------------------------
-if __name__ == "__main__":
-    init_db()
-    app.run(host="0.0.0.0", port=8000)
+</body>
+</html>
 
